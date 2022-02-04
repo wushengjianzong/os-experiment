@@ -21,9 +21,8 @@ SECTION MBR vstart=0x7c00
 	; 发起BIOS中断调用
 	int 0x10
 
-	; 文本地址存入ax
+	; 通过ax将文本地址中转到bp
 	mov ax, msg
-	; 初始化基址寄存器
 	mov bp, ax
 	; 字符串长度，不包括结束符0
 	mov cx, len
