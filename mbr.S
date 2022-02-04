@@ -1,7 +1,8 @@
 ; 创建一个汇编语言源文件mbr.S
 ; 定义一个名为vstart的代码块
 ; 根据BIOS规范，MBR引导程序从0x7c00开始
-SECTION MBR vstart=0x7c00
+%include "boot.inc"
+SECTION MBR vstart=MBR_START
 	; BIOS执行完后cs:ip寄存器为0x0000:0x7c00
 	; 这里用先用cs寄存器初始化ax寄存器
 	; 段寄存器ds/es/ss/fs不能使用立即数初始化
@@ -13,7 +14,7 @@ SECTION MBR vstart=0x7c00
 	mov fs, ax
 	; 初始化堆栈指针
 	mov sp, 0x7c00
-	; 使用gs段寄存器作为显存段基址
+	; gs段寄存器写入显存段基址
 	mov ax, 0xb800
 	mov gs, ax
 
@@ -28,32 +29,67 @@ SECTION MBR vstart=0x7c00
 	mov dx, 0x184f
 	int 0x10
 
-	; 直接写显存，在屏幕前5个位置显示cloud
-	; 低字节为ascii码，高字节为颜色设置
-	; 0x0f: 背景黑色，前景白色
-	mov byte [gs:0x0000], 'c'
-	mov byte [gs:0x0001], 0x0f
+	mov eax, 0x00000002
+	mov bx, OBR_START
+	mov cx, 1
+	call lba
+	
+	jmp OBR_START
 
-	mov byte [gs:0x0002], 'l'
-	mov byte [gs:0x0003], 0x0f
+lba:
+	mov esi, eax
+	mov di, cx
 
-	mov byte [gs:0x0004], 'o'
-	mov byte [gs:0x0005], 0x0f
+	mov dx, 0x01f2
+	mov al, cl
+	out dx, al
+	mov eax, esi
 
-	mov byte [gs:0x0006], 'u'
-	mov byte [gs:0x0007], 0x0f
+	; LBA 7~0 
+	mov dx, 0x01f3
+	out dx, al
 
-	mov byte [gs:0x0008], 'd'
-	mov byte [gs:0x0009], 0x0f
+	; LBA 15~8
+	mov cl, 8
+	shr eax, cl
+	mov dx, 0x01f4
+	out dx, al
 
-	; 使程序悬停在这里，相当于一个死循环
-	; nasm中的$代表当前行地址
-	jmp $
+	; LBA 24~16
+	shr eax, cl
+	mov dx, 0x01f5
+	out dx, al
 
-	; 整个MBR引导程序总共写入磁盘512字节
-	; MBR的最后两个字节是0x55和0xaa这样的固定内容
-	; times: nasm中表示重复执行
-	; $$代表这个vstart这个代码段的起始地址
-	; 从当前行到MBR结束标志的扇区全部填充为0
+	; LBA 24~27
+	shr eax, cl
+	and al, 0x0f
+	or al, 0xe0
+	mov dx, 0x01f6
+	out dx, al
+
+	mov dx, 0x01f7
+	mov al, 0x20
+	out dx, al
+
+.check
+	nop
+	in al, dx
+	and al, 0x88
+	cmp al, 0x08
+	jnz .check
+
+	mov ax, di
+	mov dx, 256
+	mul dx
+	mov cx, ax
+	mov dx, 0x01f0
+
+.read:
+	in ax, dx
+	mov [bx], ax
+	add bx, 0x02
+	loop .read
+	ret
+
 	times 510-($-$$) db 0
 	db 0x55, 0xaa
